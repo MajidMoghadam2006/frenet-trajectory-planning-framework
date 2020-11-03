@@ -1,4 +1,4 @@
-# RL-frenet-trajectory-planning-in-CARLA
+# frenet-trajectory-planning-in-CARLA
 ### This repository is a framework that creates an OpenAI Gym environment for self-driving car simulator CARLA in order to utilize cutting edge deep reinforcement algorithms and frenet trajectory planning.
 
 # Installation
