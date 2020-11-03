@@ -1,5 +1,5 @@
 # frenet-trajectory-planning-in-CARLA
-### This repository is a framework that creates an OpenAI Gym environment for self-driving car simulator CARLA in order to utilize cutting edge deep reinforcement algorithms and frenet trajectory planning.
+### This repository is a framework that creates an OpenAI Gym environment for self-driving car simulator CARLA in order to utilize cutting edge frenet trajectory planning for highway driving.
 
 # Installation
 - Simulation works as server-client. CARLA launches as server and uses 2000:2002 ports as default. Client can connect to server from port 2000, default, and interract with environment.
