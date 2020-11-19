@@ -216,6 +216,13 @@ class FrenetPlanner:
         self.KLAT = 1.0
         self.KLON = 1.0
 
+        # IDM parameters (shared amon all actors)
+        self.a_max = cfg.BEHAVIOR_PLANNER.IDM['a_max']
+        self.delta = cfg.BEHAVIOR_PLANNER.IDM['delta']
+        self.T = cfg.BEHAVIOR_PLANNER.IDM['T']
+        self.d0 = cfg.BEHAVIOR_PLANNER.IDM['d0']
+        self.b = cfg.BEHAVIOR_PLANNER.IDM['b']
+
         self.path = None  # current frenet path
         self.ob = []  # n obstacles [[x1, y1, z1], [x2, y2, z2], ... ,[xn, yn, zn]]
         self.csp = None  # cubic spline for global rout
@@ -323,7 +330,206 @@ class FrenetPlanner:
         # f_state[2] = s_dd
         # f_state[5] = d_dd
 
+        # Update frenet state estimation when distance error gets large (option 2: re-initialize the planner)
+        """
+        e = euclidean_distance(ego_state[0:2], [self.path.x[idx], self.path.y[idx]])
+        if e > self.MAX_DIST_ERR:
+            s, s_d, s_dd, d, d_d, d_dd = update_frenet_coordinate(self.path, ego_state[0:2])
+            # f_state[0], f_state[3] = s, d
+            f_state = [s, s_d, s_dd, d, d_d, d_dd]
+        # f_state[1:3] = ego_state[2:]
+        # f_state[1] = ego_state[2]
+        """
         return f_state
+
+    def find_surrounding_actors(self, s, d, actors_batch):
+        sur_actos = {'Left Down':   {'Exist': False, 'Frenet State': [None, None], 'Speed': None, 'Target Speed': None},
+                     'Left Up':     {'Exist': False, 'Frenet State': [None, None], 'Speed': None, 'Target Speed': None},
+                     'Center Down': {'Exist': False, 'Frenet State': [None, None], 'Speed': None, 'Target Speed': None},
+                     'Center Up':   {'Exist': False, 'Frenet State': [None, None], 'Speed': None, 'Target Speed': None},
+                     'Right Down':  {'Exist': False, 'Frenet State': [None, None], 'Speed': None, 'Target Speed': None},
+                     'Right Up':    {'Exist': False, 'Frenet State': [None, None], 'Speed': None, 'Target Speed': None}}
+
+        # [-3.5, 0.0, 3.5, 7.0] => [0, 1, 2, 3]
+        lane = int(round(d + self.LANE_WIDTH, 1) // self.LANE_WIDTH)
+
+        # l: left | c: center | r: right | u: up | d: down
+        lu_min = ld_min = cu_min = cd_min = ru_min = rd_min = float('inf')
+        for actor in actors_batch:
+            s_, d_ = actor['Frenet State']
+            lane_ = int(round(d_ + self.LANE_WIDTH, 1) // self.LANE_WIDTH)
+            s_diff = s - s_
+
+            # left
+            if lane_ == lane - 1:
+                # down
+                if s_diff >= 0 and s_diff < ld_min:
+                    ld_min = s_diff
+                    sur_actos['Left Down']['Exist'] = True
+                    sur_actos['Left Down']['Frenet State'] = [s_, d_]
+                    sur_actos['Left Down']['Speed'] = actor['Cruise Control'].speed
+                    sur_actos['Left Down']['Target Speed'] = actor['Cruise Control'].targetSpeed
+                # up
+                elif s_diff < 0 and abs(s_diff) < lu_min:
+                    lu_min = abs(s_diff)
+                    sur_actos['Left Up']['Exist'] = True
+                    sur_actos['Left Up']['Frenet State'] = [s_, d_]
+                    sur_actos['Left Up']['Speed'] = actor['Cruise Control'].speed
+                    sur_actos['Left Up']['Target Speed'] = actor['Cruise Control'].targetSpeed
+
+            # current lane
+            elif lane_ == lane:
+                # down
+                if s_diff >= 0 and s_diff < cd_min:
+                    cd_min = s_diff
+                    sur_actos['Center Down']['Exist'] = True
+                    sur_actos['Center Down']['Frenet State'] = [s_, d_]
+                    sur_actos['Center Down']['Speed'] = actor['Cruise Control'].speed
+                    sur_actos['Center Down']['Target Speed'] = actor['Cruise Control'].targetSpeed
+                # up
+                elif s_diff < 0 and s_diff < cu_min:
+                    cd_min = s_diff
+                    sur_actos['Center Up']['Exist'] = True
+                    sur_actos['Center Up']['Frenet State'] = [s_, d_]
+                    sur_actos['Center Up']['Speed'] = actor['Cruise Control'].speed
+                    sur_actos['Center Up']['Target Speed'] = actor['Cruise Control'].targetSpeed
+
+            # right
+            elif lane_ == lane + 1:
+                # down
+                if s_diff >= 0 and s_diff < rd_min:
+                    rd_min = s_diff
+                    sur_actos['Right Down']['Exist'] = True
+                    sur_actos['Right Down']['Frenet State'] = [s_, d_]
+                    sur_actos['Right Down']['Speed'] = actor['Cruise Control'].speed
+                    sur_actos['Right Down']['Target Speed'] = actor['Cruise Control'].targetSpeed
+                # up
+                elif s_diff < 0 and abs(s_diff) < ru_min:
+                    ru_min = abs(s_diff)
+                    sur_actos['Right Up']['Exist'] = True
+                    sur_actos['Right Up']['Frenet State'] = [s_, d_]
+                    sur_actos['Right Up']['Speed'] = actor['Cruise Control'].speed
+                    sur_actos['Right Up']['Target Speed'] = actor['Cruise Control'].targetSpeed
+
+        # for k, v in sur_actos.items():
+        #     act = v['actor']
+        #     if act is not None:
+        #         print(k, ': ', s - act['Frenet State'][0])
+        # print('----------------------------------')
+
+        return sur_actos
+
+    def idm_acceleration(self, s1, v1, vd1, s2=None, v2=None):
+        """
+        1: current vehicle, 2: vehicle ahead
+        s2 = None => no vehicle ahead
+        """
+        v = v1
+        vd = vd1
+
+        if s2 is None:
+            acc_cmd = self.a_max * (1 - (v / vd) ** self.delta)
+        else:
+            d = abs(s1 - s2)
+            v2 = v2
+            dv = v - v2
+            d_star = self.d0 + max(0, v * self.T + v * dv / (2 * math.sqrt(self.b * self.a_max)))
+            acc_cmd = self.a_max * (1 - (v / vd) ** self.delta - (d_star / d) ** 2)
+        return acc_cmd
+
+    def cal_mobil_accelerations(self, ego_s, ego_v, ego_s_, ego_v_, lane_, pt, sur_actors):
+        """
+        INPUT: x: current value, x_: projected value for pt seconds
+               lane: -1: left, 0: center, 1: right
+        OUTPUT: an: IDM commanded acceleration, an_: Projected IDM command acceleration
+        """
+
+        if lane_ == -1 and sur_actors['Left Down']['Exist']:
+            s = sur_actors['Left Down']['Frenet State'][0]
+            v = sur_actors['Left Down']['Speed']
+            vd = sur_actors['Left Down']['Target Speed']
+
+            if sur_actors['Left Up']['Exist']:
+                s2 = sur_actors['Left Up']['Frenet State'][0]
+                v2 = sur_actors['Left Up']['Speed']
+                an = self.idm_acceleration(s, v, vd, s2=s2, v2=v2)
+            else:
+                an = self.idm_acceleration(s, v, vd)
+
+            s_ = s + v * pt
+            v_ = v + an * pt
+            an_ = self.idm_acceleration(s_, v_, vd, s2=ego_s_, v2=ego_v_)
+
+            if sur_actors['Center Down']['Exist']:
+                s = sur_actors['Center Down']['Frenet State'][0]
+                v = sur_actors['Center Down']['Speed']
+                vd = sur_actors['Center Down']['Target Speed']
+                ao = self.idm_acceleration(s, v, vd, s2=ego_s, v2=ego_v)
+
+                s_ = s + v * pt
+                v_ = v + ao * pt
+                if sur_actors['Center Up']['Exist']:
+                    s2 = sur_actors['Center Up']['Frenet State'][0]
+                    v2 = sur_actors['Center Up']['Speed']
+                    s2_ = s2 + v2 * pt
+                    v2_ = v2 + ao * pt
+                    ao_ = self.idm_acceleration(s_, v_, vd, s2=s2_, v2=v2_)
+                else:
+                    ao_ = self.idm_acceleration(s_, v_, vd)
+            else:
+                ao = ao_ = 0
+
+        elif lane_ == 1 and sur_actors['Right Down']['Exist']:
+            s = sur_actors['Right Down']['Frenet State'][0]
+            v = sur_actors['Right Down']['Speed']
+            vd = sur_actors['Right Down']['Target Speed']
+
+            if sur_actors['Right Up']['Exist']:
+                s2 = sur_actors['Right Up']['Frenet State'][0]
+                v2 = sur_actors['Right Up']['Speed']
+                an = self.idm_acceleration(s, v, vd, s2=s2, v2=v2)
+            else:
+                an = self.idm_acceleration(s, v, vd)
+
+            s_ = s + v * pt
+            v_ = v + an * pt
+            an_ = self.idm_acceleration(s_, v_, vd, s2=ego_s_, v2=ego_v_)
+
+            if sur_actors['Center Down']['Exist']:
+                s = sur_actors['Center Down']['Frenet State'][0]
+                v = sur_actors['Center Down']['Speed']
+                vd = sur_actors['Center Down']['Target Speed']
+                ao = self.idm_acceleration(s, v, vd, s2=ego_s, v2=ego_v)
+
+                s_ = s + v * pt
+                v_ = v + ao * pt
+                if sur_actors['Center Up']['Exist']:
+                    s2 = sur_actors['Center Up']['Frenet State'][0]
+                    v2 = sur_actors['Center Up']['Speed']
+                    s2_ = s2 + v2 * pt
+                    v2_ = v2 + ao * pt
+                    ao_ = self.idm_acceleration(s_, v_, vd, s2=s2_, v2=v2_)
+                else:
+                    ao_ = self.idm_acceleration(s_, v_, vd)
+            else:
+                ao = ao_ = 0
+
+        else:   # Ego stays on the lane
+            an = an_ = 0
+
+            if sur_actors['Center Down']['Exist']:
+                s = sur_actors['Center Down']['Frenet State'][0]
+                v = sur_actors['Center Down']['Speed']
+                vd = sur_actors['Center Down']['Target Speed']
+                ao = self.idm_acceleration(s, v, vd, s2=ego_s, v2=ego_v)
+
+                s_ = s + v * pt
+                v_ = v + ao * pt
+                ao_ = self.idm_acceleration(s_, v_, vd, s2=ego_s_, v2=ego_v_)
+            else:
+                ao = ao_ = 0
+        
+        return an, an_, ao, ao_
 
     def generate_single_frenet_path(self, f_state, df=0, Tf=4, Vf=30 / 3.6):
         """
@@ -353,21 +559,22 @@ class FrenetPlanner:
 
         return fp
 
-    def calc_frenet_paths(self, f_state, change_lane=0, target_speed=30 / 3.6):
+    def calc_frenet_paths(self, f_state, other_actors, target_speed=30 / 3.6):
         """
         generate lattices - discretized candidate frenet paths
         input: ego's current frenet state and actions
         output: list of candidate frenet paths
         """
         s, s_d, s_dd, d, d_d, d_dd = f_state
+        v = math.sqrt(s_d**2 + d_d**2)
 
-        # clip for feasible target lane numbers
-        target_d = np.clip(d + change_lane * self.LANE_WIDTH, -self.LANE_WIDTH, 2 * self.LANE_WIDTH)
+        sur_actos = self.find_surrounding_actors(s, d, other_actors)
+
         frenet_paths = []
 
         # generate path to each offset goal
         path_id = 0
-        for di in [d, target_d]:
+        for di in [d-self.LANE_WIDTH, d, d+self.LANE_WIDTH]:
 
             # Lateral motion planning
             for Ti in np.arange(self.MINT, self.MAXT + self.D_T, self.D_T):
@@ -396,17 +603,31 @@ class FrenetPlanner:
                         tfp.s_dd.append(lon_qp.calc_second_derivative(t))
                         tfp.s_ddd.append(lon_qp.calc_third_derivative(t))
 
+                    s_ = tfp.s[-1]
+                    v_ = math.sqrt(tfp.s_d[-1]**2 + tfp.d_d[-1]**2)
+                    lane_ = int((tfp.d[-1] - d)/self.LANE_WIDTH)
+                    pt = tfp.t[-1]
+                    an, an_, ao, ao_ = self.cal_mobil_accelerations(s, v, s_, v_, lane_, pt, sur_actos)
+                    ae = (tfp.s[1] - tfp.s[0]) * self.dt
+                    ae_ = (tfp.s[-1] - tfp.s[-2]) * self.dt
+                    p, q = 1, 0.5
+
+                    Jm = -1 * (ae_ - ae + p*(an_ - an) + q*(ao_ - ao))
+
                     Jp = sum(np.power(tfp.d_ddd, 2))  # square of jerk
                     Js = sum(np.power(tfp.s_ddd, 2))  # square of jerk
+                    Jj = math.sqrt(Jp + Js) / len(tfp.t)
 
                     # square of diff from target speed
-                    ds = (target_speed - tfp.s_d[-1]) ** 2
+                    speed = math.sqrt(tfp.s_d[-1]**2 + tfp.d_d[-1]**2)
+                    ev = (target_speed - speed) ** 2
 
-                    tfp.cd = self.KJ * Jp + self.KT * Ti + self.KD * (tfp.d[-1] - target_d) ** 2
-                    tfp.cv = self.KJ * Js + self.KT * Ti + self.KD * ds
-                    tfp.cf = self.KLAT * tfp.cd + self.KLON * tfp.cv
+                    # print(Jj, Ti, ev, Jm)
+                    tfp.cf = Jj/500 + 2*Ti/6 + 4*ev/2 + 10*Jm/0.15
+                    # tfp.cf = Jm
 
                     frenet_paths.append(tfp)
+        # print('--------------------------------')
         return frenet_paths
 
     def calc_global_paths(self, fplist):
@@ -489,23 +710,23 @@ class FrenetPlanner:
         okind = []
         for i in range(len(fplist)):
             if any([v > self.MAX_SPEED for v in fplist[i].s_d]):  # Max speed check
-                print('speed')
+                # print('speed')
                 continue
             elif any([abs(a) > self.MAX_ACCEL for a in fplist[i].s_dd]):  # Max accel check
-                print('acc')
+                # print('acc')
                 continue
             elif any([abs(c) > self.MAX_CURVATURE for c in fplist[i].c]):  # Max curvature check
-                print('cur')
+                # print('cur')
                 continue
             elif not self.check_collision(fplist[i], self.ob):
-                print('col')
+                # print('col')
                 continue
 
             okind.append(i)
 
         return [fplist[i] for i in okind]
 
-    def frenet_optimal_planning(self, f_state, change_lane=0, target_speed=30 / 3.6):
+    def frenet_optimal_planning(self, f_state, other_actors, target_speed=30 / 3.6):
         """
         input: current frenet state and actions
         output: candidate frenet paths and index of the optimal path
@@ -516,7 +737,7 @@ class FrenetPlanner:
                 - find the optimal path based on cost values
         """
 
-        fplist = self.calc_frenet_paths(f_state, change_lane=change_lane, target_speed=target_speed)
+        fplist = self.calc_frenet_paths(f_state, other_actors, target_speed=target_speed)
         fplist = self.calc_global_paths(fplist)
         fplist = self.calc_curvature_paths(fplist)
         fplist = self.check_paths(fplist)
@@ -551,7 +772,7 @@ class FrenetPlanner:
 
             self.path = self.generate_single_frenet_path(f_state, df=df, Tf=Tf, Vf=Vf)
 
-    def run_step(self, ego_state, idx, change_lane=0, target_speed=30 / 3.6):
+    def run_step(self, ego_state, idx, other_actors, target_speed=30 / 3.6):
         """
         change lane: -1: go to left lane; 0: stay in current lane; 1: go to right lane;
         """
@@ -561,11 +782,10 @@ class FrenetPlanner:
         f_state = self.estimate_frenet_state(ego_state, idx)
 
         # Frenet motion planning
-        best_path_idx, fplist = self.frenet_optimal_planning(f_state, change_lane=change_lane,
-                                                             target_speed=target_speed)
+        best_path_idx, fplist = self.frenet_optimal_planning(f_state, other_actors, target_speed=target_speed)
         self.path = fplist[best_path_idx]
         # print('trajectory planning time: {} s'.format(time.time() - t0))
-        return self.path, fplist
+        return self.path, fplist, best_path_idx
 
     def run_step_single_path(self, ego_state, idx, df_n=0, Tf=4, Vf_n=0):
         """
@@ -577,28 +797,15 @@ class FrenetPlanner:
 
         # estimate frenet state
         f_state = self.estimate_frenet_state(ego_state, idx)
+
         # convert lateral action value from range (-1, 1) to the desired value in [-3.5, 0.0, 3.0, 7.0]
-        if df_n < -0.33:
-            df = -1
-        elif df_n > 0.33:
-            df = 1
-        else:
-            df = 0
-
-        d = self.path.d[idx]  # CHANGE THIS! when f_state estimation works fine. (self.path.d[idx])(d = f_state[3])
-        _df = np.clip(df * self.LANE_WIDTH + d, -2 * self.LANE_WIDTH, 3 * self.LANE_WIDTH).item()
-        df = closest([self.LANE_WIDTH * lane_n for lane_n in range(-1, 3)], _df)
-        # df = np.round(df_n[0]) * self.LANE_WIDTH + d  # allows agent to drive off the road
-
-        # lanechange should be set true if there is a lane change
-        lanechange = True if abs(df - d) >= 3 else False
-
-        # off-the-road attempt is recorded
-        off_the_road = True if _df < -4 or _df > 7.5 else False
+        d = self.path.d[idx]  # CHANGE THIS! when f_state estimation works fine. (d = f_state[3])
+        df = np.clip(np.round(df_n) * self.LANE_WIDTH + d, -self.LANE_WIDTH, 2 * self.LANE_WIDTH).item()
+        df = closest([self.LANE_WIDTH * lane_n for lane_n in range(-1, 3)], df)
 
         Vf = self.speed_radius * Vf_n + self.speed_center
 
         # Frenet motion planning
         self.path = self.generate_single_frenet_path(f_state, df=df, Tf=Tf, Vf=Vf)
 
-        return self.path, lanechange, off_the_road
+        return self.path

@@ -92,7 +92,6 @@ except ImportError:
     raise RuntimeError('cannot import pygame, make sure pygame package is installed')
 
 import numpy as np
-from collections import deque
 
 # ==============================================================================
 # -- Constants -----------------------------------------------------------------
@@ -1013,7 +1012,11 @@ class ModuleWorld:
         self.initSettings = None
         self.frame = None
 
-        self.points_to_draw = {}  # add waypoints to this dictionary to visualize them in Pygame
+        self.points_to_draw = []
+        # list of layers for waypoints. Points' drawing priority increases from first layer to last in the list.
+        # each layer is a dictionary, e.g. {'path 1': {}, 'path 2': {}}
+        # each path is a dictionary, e.g. {'waypoints': [[x0, y0], ..., [xn, yn]], 'color': 'COLOR_ALUMINIUM_0'}
+
         self.global_csp = None
         self.LANE_WIDTH = float(cfg.CARLA.LANE_WIDTH)
         self.init_s = 50  # ego initial s location
@@ -1177,6 +1180,7 @@ class ModuleWorld:
         #  should be smaller than max_s - track_length to have all tracks with the same length
 
         self.init_d = np.random.randint(-1, 3) * self.LANE_WIDTH  # -1 and 3 because global route is defined on the second lane from left
+        self.init_d = 0 * self.LANE_WIDTH  # -1 and 3 because global route is defined on the second lane from left
 
         x, y, z, yaw = frenet_to_inertial(self.init_s, self.init_d, self.global_csp)
         z += 0.1
@@ -1394,15 +1398,12 @@ class ModuleWorld:
         self._render_walkers(surface, walkers, self.map_image.world_to_pixel)
 
     def render_points_to_draw(self, radius=7):
-        for name, val in self.points_to_draw.items():
-            if isinstance(val, list):
-                location = val[0]
-                color = val[1]
-            else:
-                location = val
-                color = 'COLOR_ORANGE_0'
-            center = self.map_image.world_to_pixel(location)
-            pygame.draw.circle(self.actors_surface, eval(color), center, radius)
+        for layer in self.points_to_draw:
+            for path_name, path_values in layer.items():
+                color = path_values['color']
+                for location in path_values['waypoints']:
+                    center = self.map_image.world_to_pixel(location)
+                    pygame.draw.circle(self.actors_surface, eval(color), center, radius)
 
     def clip_surfaces(self, clipping_rect):
         self.actors_surface.set_clip(clipping_rect)
@@ -1732,8 +1733,7 @@ class TrafficManager:
             otherActor.set_angular_velocity(carla.Vector3D(x=0, y=0, z=0))
             # keep actors and sensors to destroy them when an episode is finished
             cruiseControl = CruiseControl(otherActor, los_sensor, s, d, lane, self.module_manager, targetSpeed=targetSpeed)
-            deq_s = deque([s], maxlen=50)
-            self.actors_batch.append({'Actor': otherActor, 'Sensor': los_sensor, 'Cruise Control': cruiseControl, 'Frenet State': [deq_s, d]})
+            self.actors_batch.append({'Actor': otherActor, 'Sensor': los_sensor, 'Cruise Control': cruiseControl, 'Frenet State': [s, d]})
         return otherActor
 
     def start(self):
@@ -1772,9 +1772,11 @@ class TrafficManager:
         # re-spawn N_INIT_CARS of actors
         ego_lane = int(ego_d / self.LANE_WIDTH)
         ego_grid_n = ego_lane + 9  # in Grid world (see notes above), ego is in column 2 so its grid number will be based on its lane number
-        grid_choices = np.arange(16, 60)
-
+        grid_choices = np.arange(80)
+        grid_choices = np.delete(grid_choices, ego_grid_n)  # Don't spawn any car at the ego location
+        grid_choices = np.delete(grid_choices, ego_grid_n + 4)  # Don't spawn any car right in front of the ego
         rnd_indices = np.random.choice(grid_choices, self.N_SPAWN_CARS, replace=False)
+
         for idx in rnd_indices:
             col = idx // 4  # col number [0, 19]
             lane = idx - col * 4 - 1  # lane number [-1, 2]
@@ -1793,10 +1795,8 @@ class TrafficManager:
             control = actor_dic['Cruise Control']
             state = control.tick()
             s = self.estimate_s(control.s, state[0], state[1], state[-1])
-            actor_dic['Frenet State'][0].append(s)  # append current actor s value
-            # actor_dic['Frenet State'][0] = s
-            # IMPORTANT actor d is NOT updated
             control.update_s(s)
+            actor_dic['Frenet State'][0] = s
 
 
 class LineOfSightSensor(object):
@@ -1811,7 +1811,7 @@ class LineOfSightSensor(object):
         bp.set_attribute('distance', '200')
         bp.set_attribute('hit_radius', '0.5')
         bp.set_attribute('only_dynamics', 'True')
-        bp.set_attribute('debug_linetrace', 'False')
+        bp.set_attribute('debug_linetrace', 'True')
         bp.set_attribute('sensor_tick', '0.0')
         self.sensor = world.spawn_actor(bp, carla.Transform(), attach_to=self._parent)
         weak_self = weakref.ref(self)

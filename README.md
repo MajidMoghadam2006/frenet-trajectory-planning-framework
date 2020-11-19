@@ -47,3 +47,4 @@ Now you may import carla in your python script.
 - Env and simulation Config File: tools/cfgs/config.yaml
 - Gym Environment: carla_gym/envs/ # Gym environment interface for CARLA, To manipulate observation, action, reward etc. (suitable for RL training)
 - Modules: tools/modules.py # Pretty much wraps everything
+

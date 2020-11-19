@@ -325,13 +325,22 @@ class IntelligentDriverModel:
     https://arxiv.org/pdf/1909.11538.pdf
     """
 
-    def __init__(self, vehicle):
+    def __init__(self, vehicle, params=None):
         self.vehicle = vehicle
-        self.a_max = 1     # needs tuning (depending on the vehicle dynamics)
-        self.delta = 4
-        self.T = 1.6
-        self.d0 = 2
-        self.b = 1.7
+
+        if params is None:
+            self.a_max = 1     # needs tuning (depending on the vehicle dynamics)
+            self.delta = 4
+            self.T = 1.6
+            self.d0 = 2
+            self.b = 1.7
+        else:
+            self.a_max = params['a_max']
+            self.delta = params['delta']
+            self.T = params['T']
+            self.d0 = params['d0']
+            self.b = params['b']
+
         if float(cfg.CARLA.DT) > 0:
             self.dt = float(cfg.CARLA.DT)
         else:
