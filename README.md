@@ -27,16 +27,23 @@ Now you may import carla in your python script.
 # Example execution:
 - We need to start two different terminals. 
 ### Terminal-1
-- ```cd CARLA_0.9.9/```
-- ```./CarlaUE4.sh -carla-server -fps=20 -world-port=2000 -windowed -ResX=1280 -ResY=720 -carla-no-hud -quality-level=Low [CARLA documentation](https://carla.readthedocs.io/en/latest/)```
+- ```cd CARLA_0.9.9.2/```
+- ```DISPLAY= ./CarlaUE4.sh -opengl```
+[CARLA documentation](https://carla.readthedocs.io/en/latest/)
+
 ### Terminal-2
 - ```cd frenet-trajectory-planning-framework/```
 - ```python3 run.py --cfg_file=tools/cfgs/config.yaml --env=CarlaGymEnv-v1 --play_mode=1```
 
 - Execution parameters are configured in program arguments:
 
-- ```--num_timesteps```; number of the time steps to train agent, default=1e7 
+-```--cfg_file```: specifies the config file
+-```--env```: Gym environment ID
 - ```--play_mode```: Display mode: 0:off, 1:2D, 2:3D, default=0
+-```--carla_host```: IP of the host server (default: 127.0.0.1)
+-```--carla_port```: TCP port to listen to (default: 2000)
+-```--tm_port```: Traffic Manager TCP port to listen to (default: 8000)
+-```--carla_res```: Window resolution (default: 1280x720)
 
 - Carla requires a powerful GPU to produce high fps. In order to increase performance you can run following as an alternative:
 

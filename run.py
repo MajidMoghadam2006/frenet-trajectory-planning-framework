@@ -16,7 +16,7 @@ from config import cfg, log_config_to_file, cfg_from_list, cfg_from_yaml_file
 
 def parse_args_cfgs():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--cfg_file', type=str, default=None, help='specify the config for training')
+    parser.add_argument('--cfg_file', type=str, default=None, help='specify the config file')
     parser.add_argument('--env', help='environment ID', type=str, default='CarlaGymEnv-v1')
     parser.add_argument('--play_mode', type=int, help='Display mode: 0:off, 1:2D, 2:3D ', default=1)
     parser.add_argument('--carla_host', metavar='H', default='127.0.0.1', help='IP of the host server (default: 127.0.0.1)')

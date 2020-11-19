@@ -703,6 +703,45 @@ class FrenetPlanner:
 
     def check_paths(self, fplist):
         """
+                    Jm = -1 * (ae_ - ae + p*(an_ - an) + q*(ao_ - ao))
+
+                    Jp = sum(np.power(tfp.d_ddd, 2))  # square of jerk
+                    Js = sum(np.power(tfp.s_ddd, 2))  # square of jerk
+                    Jj = math.sqrt(Jp + Js) / len(tfp.t)
+
+                    # square of diff from target speed
+                    speed = math.sqrt(tfp.s_d[-1]**2 +
+                    Jm = -1 * (ae_ - ae + p*(an_ - an) + q*(ao_ - ao))
+
+                    Jp = sum(np.power(tfp.d_ddd, 2))  # square of jerk
+                    Js = sum(np.power(tfp.s_ddd, 2))  # square of jerk
+                    Jj = math.sqrt(Jp + Js) / len(tfp.t)
+
+                    Jm = -1 * (ae_ - ae + p*(an_ - an) + q*(ao_ - ao))
+
+                    Jp = sum(np.power(tfp.d_ddd, 2))  # square of jerk
+                    Js = sum(np.power(tfp.s_ddd, 2))  # square of jerk
+                    Jj = math.sqrt(Jp + Js) / len(tfp.t)
+
+                    # square of diff from target speed
+                    speed = math.sqrt(tfp.s_d[-1]**2 + tfp.d_d[-1]**2)
+                    ev = (target_speed - speed) ** 2
+
+                    # print(Jj, Ti, ev, Jm)
+                    tfp.cf = Jj/500 + 2*Ti/6 + 4*ev/2 + 10*Jm/0.15
+                    # tfp.cf = Jm
+                    # square of diff from target speed
+                    speed = math.sqrt(tfp.s_d[-1]**2 + tfp.d_d[-1]**2)
+                    ev = (target_speed - speed) ** 2
+
+                    # print(Jj, Ti, ev, Jm)
+                    tfp.cf = Jj/500 + 2*Ti/6 + 4*ev/2 + 10*Jm/0.15
+                    # tfp.cf = Jmtfp.d_d[-1]**2)
+                    ev = (target_speed - speed) ** 2
+
+                    # print(Jj, Ti, ev, Jm)
+                    tfp.cf = Jj/500 + 2*Ti/6 + 4*ev/2 + 10*Jm/0.15
+                    # tfp.cf = Jm
         check for collisions
         input: list of frenet paths
         output: list of frenet paths - removed the infeasible ones
