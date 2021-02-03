@@ -1,6 +1,6 @@
 # frenet-trajectory-planning-in-CARLA
 ### This project introduces a framework for long-term short-term decision-making and planning for self-driving cars on the Frenet frame. We have utilized the Frenet frame for both the driving route definition and the trajectory generation. We have also provided a forward and inverse transformation from Cartesian to Frenet coordinates.
-
+![](case_1_contRL_2d.gif) ![](case_1_agile_2d.gif)
 # Installation
 - Simulation works as server-client. CARLA launches as server and uses 2000:2002 ports as default. Client can connect to server from port 2000, default, and interract with environment.
 
