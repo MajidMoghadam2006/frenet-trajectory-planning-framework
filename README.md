@@ -55,3 +55,10 @@ Now you may import carla in your python script.
 - Gym Environment: carla_gym/envs/ # Gym environment interface for CARLA, To manipulate observation, action, reward etc. (suitable for RL training)
 - Modules: tools/modules.py # Pretty much wraps everything
 
+# To cite this repository in publications:
+```@article{moghadam2020autonomous,
+  title={An Autonomous Driving Framework for Long-term Decision-making and Short-term Trajectory Planning on Frenet Space},
+  author={Moghadam, Majid and Elkaim, Gabriel Hugh},
+  journal={arXiv preprint arXiv:2011.13099},
+  year={2020}
+}
